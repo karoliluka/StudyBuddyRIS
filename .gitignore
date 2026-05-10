@@ -1,0 +1,9 @@
+# Mac metadata
+__MACOSX/
+.DS_Store
+
+# Claude Code settings
+.claude/
+
+# Bundled JRE (too large for GitHub)
+dist/StudyBuddy/runtime/
