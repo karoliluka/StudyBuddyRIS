@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyBuddy</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      background: #e8eaf0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      --color-bg:        #ffffff;
+      --color-bg2:       #f5f5f7;
+      --color-bg3:       #ebebed;
+      --color-border1:   #c7c7cc;
+      --color-border2:   #d1d1d6;
+      --color-border3:   #e5e5ea;
+      --color-text1:     #1c1c1e;
+      --color-text2:     #6c6c70;
+      --color-text3:     #aeaeb2;
+      --color-danger:    #d32f2f;
+    }
+    #phone {
+      width: 358px;
+      background: var(--color-bg);
+      border-radius: 36px;
+      border: 0.5px solid var(--color-border2);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 716px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.18);
+    }
+    #statusbar {
+      padding: 13px 20px 3px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text2);
+      flex-shrink: 0;
+    }
+    #screen { flex: 1; overflow-y: auto; overflow-x: hidden; }
+    #screen::-webkit-scrollbar { width: 0; }
+    #bnav { flex-shrink: 0; border-top: 0.5px solid var(--color-border3); padding: 4px 0 6px; display: none; }
+    input {
+      border: 0.5px solid var(--color-border2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      background: var(--color-bg2);
+      color: var(--color-text1);
+      font-family: inherit;
+      outline: none;
+      width: 100%;
+    }
+    input:focus { border-color: #378ADD; }
+    button { font-family: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="phone">
+  <div id="statusbar">
+    <span id="clock">--:--</span>
+    <div style="display:flex;gap:5px;align-items:center;">
+      <i class="ti ti-wifi" style="font-size:13px;"></i>
+      <i class="ti ti-battery-2" style="font-size:13px;"></i>
+    </div>
+  </div>
+  <div id="screen"></div>
+  <nav id="bnav"></nav>
+</div>
+
+<script>
+// ============================================================
+// ENTITY CLASSES  (VOPC diagram – Entity layer)
+// ============================================================
+
+class UserInfo {
+  constructor(userId, firstname, lastname, email, password) {
+    this.User_ID   = userId;
+    this.Firstname = firstname;
+    this.Lastname  = lastname;
+    this.Email     = email;
+    this.password  = password;
+  }
+}
+
+class StudySession {
+  constructor(sessionId, startTime, duration, userId, subjectId) {
+    this.Session_ID  = sessionId;
+    this.start_time  = startTime;
+    this.duration    = duration;   // minutes
+    this.User_ID     = userId;
+    this.Subject_ID  = subjectId;
+  }
+}
+
+class Subject {
+  constructor(subjectId, name, userId, color, totalMinutes = 0) {
+    this.Subject_ID    = subjectId;
+    this.Name          = name;
+    this.User_ID       = userId;
+    this.color         = color;
+    this.totalMinutes  = totalMinutes;
+  }
+  addTopic(topic)    { return topic; }
+  removeTopic(topic) { return topic; }
+}
+
+class Topic {
+  constructor(topicId, name, subjectId) {
+    this.Topic_ID   = topicId;
+    this.Name       = name;
+    this.Subject_ID = subjectId;
+  }
+}
+
+class Task {
+  constructor(taskId, text, subjectId, done = false) {
+    this.Task_ID    = taskId;
+    this.text       = text;
+    this.Subject_ID = subjectId;
+    this.done       = done;
+  }
+}
+
+// ============================================================
+// CONTROL CLASSES  (VOPC diagram – Control layer)
+// ============================================================
+
+class StudySessionController {
+  constructor(dataStore) {
+    this.dataStore = dataStore;
+    this._active   = null;
+  }
+
+  izracunajDuration(startTime, endTime) {
+    return Math.floor((endTime - startTime) / 60000);
+  }
+
+  startSession(userId, subjectId) {
+    if (this._active) clearInterval(this._active.iid);
+    const id = this.dataStore.nextSessionId++;
+    this._active = {
+      session: new StudySession(id, new Date(), 0, userId, subjectId),
+      secs: 0,
+      iid: null
+    };
+    this._active.iid = setInterval(() => {
+      this._active.secs++;
+      window.app.sessionUI.updateTimer();
+    }, 1000);
+    return id;
+  }
+
+  endSession() {
+    if (!this._active) return null;
+    const mins = Math.floor(this._active.secs / 60);
+    this._active.session.duration = mins;
+    const subj = this.dataStore.subjects.find(s => s.Subject_ID === this._active.session.Subject_ID);
+    if (subj) subj.totalMinutes += mins;
+    this.dataStore.sessions.push(this._active.session);
+    clearInterval(this._active.iid);
+    const saved = this._active.session;
+    this._active = null;
+    return saved;
+  }
+
+  cancelSession() {
+    if (!this._active) return;
+    clearInterval(this._active.iid);
+    this._active = null;
+  }
+
+  isActive()     { return this._active !== null; }
+  getSecs()      { return this._active ? this._active.secs : 0; }
+  getSubjectId() { return this._active ? this._active.session.Subject_ID : null; }
+}
+
+class StatsController {
+  constructor(dataStore) { this.dataStore = dataStore; }
+
+  getStudyTimeBySubject(userId, subjectId) {
+    return this.dataStore.sessions
+      .filter(s => s.User_ID === userId && s.Subject_ID === subjectId)
+      .reduce((sum, s) => sum + s.duration, 0);
+  }
+
+  getSessionCount(userId) {
+    return this.dataStore.sessions.filter(s => s.User_ID === userId).length;
+  }
+}
+
+// ============================================================
+// BOUNDARY CLASSES  (VOPC diagram – Boundary layer)
+// ============================================================
+
+class SubjectSelector {
+  constructor(app) { this.app = app; }
+  showSubjects() {
+    this.app.navigate('subjects');
+    return this.app.state.selectedSubjectId;
+  }
+}
+
+class StudySessionUI {
+  constructor(app) { this.app = app; }
+
+  showSessionForm() { this.app.navigate('session'); }
+
+  updateTimer() {
+    const secs = this.app.sessionController.getSecs();
+    const d = document.getElementById('timer-disp');
+    if (d) d.textContent = this.app.fmts(secs);
+    const m = document.getElementById('sessmini');
+    if (m) m.textContent = this.app.fmts(secs);
+  }
+
+  showStats() { this.app.navigate('stats'); }
+
+  showError(msg) {
+    const el = document.getElementById('form-error');
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+    else alert(msg);
+  }
+}
+
+// ============================================================
+// DATA STORE  (hardcoded test data – simulates persistence)
+// ============================================================
+
+class DataStore {
+  constructor() {
+    this.nextUserId    = 3;
+    this.nextSubjectId = 5;
+    this.nextTopicId   = 10;
+    this.nextTaskId    = 8;
+    this.nextSessionId = 13;
+
+    this.users = [
+      new UserInfo(1, 'Luka',  'Karoli', 'luka@uni.si',  'geslo1234'),
+      new UserInfo(2, 'Aljaž', 'Smole',  'aljaz@uni.si', 'geslo1234'),
+    ];
+
+    this.subjects = [
+      new Subject(1, 'Razvoj IS',       1, 'blue',   320),
+      new Subject(2, 'Matematika',       1, 'teal',   240),
+      new Subject(3, 'Algoritmi',        1, 'purple', 180),
+      new Subject(4, 'Baze podatkov',    1, 'coral',   90),
+    ];
+
+    this.topics = [
+      new Topic(1, 'UML diagrami',          1),
+      new Topic(2, 'RUP metodologija',       1),
+      new Topic(3, 'Primeri uporabe',        1),
+      new Topic(4, 'Integrali',              2),
+      new Topic(5, 'Diferencialne enačbe',   2),
+      new Topic(6, 'Razporejanje',           3),
+      new Topic(7, 'Grafovni algoritmi',     3),
+      new Topic(8, 'SQL poizvedbe',          4),
+      new Topic(9, 'Normalizacija',          4),
+    ];
+
+    this.tasks = [
+      new Task(1, 'Reši vaje za kolokij',    1, false),
+      new Task(2, 'Preberi poglavje o RUP',  1, true),
+      new Task(3, 'Nariši razredni diagram', 1, false),
+      new Task(4, 'Ponovi integriranje',     2, false),
+      new Task(5, 'Reši domačo nalogo',      2, true),
+      new Task(6, 'Implementiraj quicksort', 3, false),
+      new Task(7, 'Vaja: SQL JOIN',          4, true),
+    ];
+
+    this.sessions = [
+      new StudySession( 1, new Date('2025-01-10'), 45, 1, 1),
+      new StudySession( 2, new Date('2025-01-11'), 60, 1, 2),
+      new StudySession( 3, new Date('2025-01-12'), 30, 1, 1),
+      new StudySession( 4, new Date('2025-01-13'), 90, 1, 3),
+      new StudySession( 5, new Date('2025-01-14'), 45, 1, 4),
+      new StudySession( 6, new Date('2025-01-15'), 50, 1, 2),
+      new StudySession( 7, new Date('2025-01-16'), 40, 1, 1),
+      new StudySession( 8, new Date('2025-01-17'), 70, 1, 3),
+      new StudySession( 9, new Date('2025-01-18'), 80, 1, 1),
+      new StudySession(10, new Date('2025-01-19'), 55, 1, 2),
+      new StudySession(11, new Date('2025-01-20'), 65, 1, 4),
+      new StudySession(12, new Date('2025-01-21'), 75, 1, 1),
+    ];
+  }
+}
+
+// ============================================================
+// APP  (wires everything together)
+// ============================================================
+
+class App {
+  constructor() {
+    this.dataStore          = new DataStore();
+    this.sessionController  = new StudySessionController(this.dataStore);
+    this.statsController    = new StatsController(this.dataStore);
+    this.subjectSelector    = new SubjectSelector(this);
+    this.sessionUI          = new StudySessionUI(this);
+
+    this.state = {
+      screen:            'login',
+      currentUser:       null,
+      selectedSubjectId: null,
+      showDialog:        false,
+    };
+
+    this.C = {
+      blue:   { bg:'#E6F1FB', bd:'#378ADD', tx:'#0C447C' },
+      teal:   { bg:'#E1F5EE', bd:'#1D9E75', tx:'#085041' },
+      purple: { bg:'#EEEDFE', bd:'#7F77DD', tx:'#3C3489' },
+      coral:  { bg:'#FAECE7', bd:'#D85A30', tx:'#712B13' },
+      amber:  { bg:'#FAEEDA', bd:'#BA7517', tx:'#633806' },
+    };
+
+    this.colorKeys = Object.keys(this.C);
+
+    this.navItems = [
+      { sc:'home',     ic:'ti-home',        lb:'Domov'   },
+      { sc:'subjects', ic:'ti-folder',      lb:'Predmeti'},
+      { sc:'session',  ic:'ti-player-play', lb:'Seja'    },
+      { sc:'stats',    ic:'ti-chart-bar',   lb:'Stat'    },
+      { sc:'profile',  ic:'ti-user',        lb:'Profil'  },
+    ];
+
+    this._startClock();
+    this.render();
+  }
+
+  // ── helpers ──────────────────────────────────────────────
+
+  fmt(m)  { const h=Math.floor(m/60),r=m%60; return h?h+'h'+(r?' '+r+'m':''):r+'min'; }
+  fmts(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60; return (h?h+':':'')+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0'); }
+  color(k){ return this.C[k]||this.C.blue; }
+  short(n){ return n.substring(0,3).toUpperCase(); }
+
+  subj(id)       { return this.dataStore.subjects.find(s => s.Subject_ID === id); }
+  mySubjects()   { return this.dataStore.subjects.filter(s => s.User_ID === this.state.currentUser?.User_ID); }
+  myTasks()      { const ids=this.mySubjects().map(s=>s.Subject_ID); return this.dataStore.tasks.filter(t=>ids.includes(t.Subject_ID)); }
+  totalTime()    { return this.mySubjects().reduce((a,s)=>a+s.totalMinutes,0); }
+
+  _startClock() {
+    const tick = () => {
+      const n = new Date();
+      const el = document.getElementById('clock');
+      if (el) el.textContent = String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+    };
+    tick();
+    setInterval(tick, 15000);
+  }
+
+  // ── navigation ───────────────────────────────────────────
+
+  navigate(screen, extra = {}) {
+    Object.assign(this.state, extra);
+    this.state.screen     = screen;
+    this.state.showDialog = false;
+    this.render();
+  }
+
+  // ── actions ──────────────────────────────────────────────
+
+  login() {
+    const email = document.getElementById('login-email')?.value?.trim();
+    const pass  = document.getElementById('login-pass')?.value;
+    const user  = this.dataStore.users.find(u => u.Email === email && u.password === pass);
+    if (user) { this.state.currentUser = user; this.navigate('home'); }
+    else this.sessionUI.showError('Napačen e-poštni naslov ali geslo!');
+  }
+
+  register() {
+    const first = document.getElementById('reg-first')?.value?.trim();
+    const last  = document.getElementById('reg-last')?.value?.trim();
+    const email = document.getElementById('reg-email')?.value?.trim();
+    const pass  = document.getElementById('reg-pass')?.value;
+    if (!first||!last||!email||!pass) { this.sessionUI.showError('Vsa polja so obvezna!'); return; }
+    if (this.dataStore.users.find(u=>u.Email===email)) { this.sessionUI.showError('Uporabnik že obstaja!'); return; }
+    const user = new UserInfo(this.dataStore.nextUserId++, first, last, email, pass);
+    this.dataStore.users.push(user);
+    this.state.currentUser = user;
+    this.navigate('home');
+  }
+
+  addSubject() {
+    const name  = document.getElementById('new-subj-name')?.value?.trim();
+    const color = document.getElementById('new-subj-color')?.value || 'blue';
+    if (!name) { this.sessionUI.showError('Vnesite ime predmeta!'); return; }
+    const s = new Subject(this.dataStore.nextSubjectId++, name, this.state.currentUser.User_ID, color, 0);
+    this.dataStore.subjects.push(s);
+    this.navigate('subjects');
+  }
+
+  addTopic() {
+    const name = document.getElementById('new-topic-name')?.value?.trim();
+    if (!name) { this.sessionUI.showError('Vnesite ime teme!'); return; }
+    const s = this.subj(this.state.selectedSubjectId);
+    const t = new Topic(this.dataStore.nextTopicId++, name, s.Subject_ID);
+    s.addTopic(t);
+    this.dataStore.topics.push(t);
+    this.navigate('detail', { selectedSubjectId: this.state.selectedSubjectId });
+  }
+
+  addTask() {
+    const text = document.getElementById('new-task-text')?.value?.trim();
+    if (!text) { this.sessionUI.showError('Vnesite besedilo naloge!'); return; }
+    const t = new Task(this.dataStore.nextTaskId++, text, this.state.selectedSubjectId, false);
+    this.dataStore.tasks.push(t);
+    this.navigate('detail', { selectedSubjectId: this.state.selectedSubjectId });
+  }
+
+  toggleTask(id) {
+    const t = this.dataStore.tasks.find(t=>t.Task_ID===id);
+    if (t) { t.done = !t.done; this.render(); }
+  }
+
+  startSession(subjectId) {
+    this.sessionController.startSession(this.state.currentUser.User_ID, subjectId);
+    this.sessionUI.showSessionForm();
+  }
+
+  endSession() {
+    this.sessionController.endSession();
+    this.state.showDialog = false;
+    this.sessionUI.showStats();
+  }
+
+  cancelSession() {
+    this.sessionController.cancelSession();
+    this.navigate('home');
+  }
+
+  logout() {
+    if (this.sessionController.isActive()) this.sessionController.cancelSession();
+    this.state.currentUser = null;
+    this.navigate('login');
+  }
+
+  pickColor(key) {
+    const inp = document.getElementById('new-subj-color');
+    if (inp) inp.value = key;
+    this.colorKeys.forEach(k => {
+      const el = document.getElementById('sw-'+k);
+      if (el) el.style.outline = k===key ? `3px solid ${this.C[k].bd}` : 'none';
+    });
+  }
+
+  // ── render ───────────────────────────────────────────────
+
+  render() {
+    const screen = document.getElementById('screen');
+    if (!screen) return;
+    const map = {
+      login: ()=>this._login(), register: ()=>this._register(),
+      home: ()=>this._home(), subjects: ()=>this._subjects(),
+      addSubject: ()=>this._addSubject(), detail: ()=>this._detail(),
+      addTopic: ()=>this._addTopic(), addTask: ()=>this._addTask(),
+      session: ()=>this._session(), stats: ()=>this._stats(),
+      profile: ()=>this._profile(),
+    };
+    const fn = map[this.state.screen];
+    screen.innerHTML = fn ? fn() : '';
+    this._nav();
+  }
+
+  _nav() {
+    const el = document.getElementById('bnav');
+    if (!el) return;
+    const show = ['home','subjects','detail','session','stats','profile'].includes(this.state.screen);
+    el.style.display = show ? 'flex' : 'none';
+    if (!show) return;
+    el.innerHTML = this.navItems.map(n => {
+      const act = this.state.screen===n.sc || (n.sc==='subjects'&&this.state.screen==='detail');
+      const col = act ? this.C.blue.tx : 'var(--color-text3)';
+      const dot = n.sc==='session'&&this.sessionController.isActive()
+        ? `<div style="position:absolute;top:2px;right:calc(50% - 13px);width:6px;height:6px;background:${this.C.teal.bd};border-radius:50%;"></div>` : '';
+      return `<div onclick="window.app.navigate('${n.sc}')" style="flex:1;padding:6px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;position:relative;">
+  ${dot}<i class="ti ${n.ic}" style="font-size:20px;color:${col};"></i>
+  <span style="font-size:10px;color:${col};font-weight:${act?500:400};">${n.lb}</span>
+</div>`;
+    }).join('');
+  }
+
+  _errBox() {
+    return `<div id="form-error" style="display:none;margin-bottom:12px;padding:9px 12px;background:#FAECE7;border:0.5px solid #D85A30;border-radius:8px;font-size:13px;color:#712B13;"></div>`;
+  }
+
+  // ── screens ──────────────────────────────────────────────
+
+  _login() {
+    const C = this.C.blue;
+    return `<div style="padding:36px 24px 20px;display:flex;flex-direction:column;align-items:center;">
+  <div style="width:60px;height:60px;border-radius:16px;background:${C.bg};border:0.5px solid ${C.bd};display:flex;align-items:center;justify-content:center;margin-bottom:10px;">
+    <i class="ti ti-book-2" style="font-size:28px;color:${C.tx};"></i>
+  </div>
+  <h1 style="font-size:22px;font-weight:500;margin:8px 0 4px;color:var(--color-text1);">StudyBuddy</h1>
+  <p style="font-size:13px;color:var(--color-text2);margin:0 0 28px;">Organiziraj svoje učenje</p>
+  ${this._errBox()}
+  <div style="width:100%;">
+    <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">E-poštni naslov</label>
+    <input id="login-email" type="email" value="luka@uni.si" style="margin-bottom:12px;" onkeydown="if(event.key==='Enter')window.app.login()"/>
+    <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Geslo</label>
+    <input id="login-pass" type="password" value="geslo1234" style="margin-bottom:22px;" onkeydown="if(event.key==='Enter')window.app.login()"/>
+    <button onclick="window.app.login()" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:${C.bd};color:#fff;border:none;border-radius:10px;">Prijava</button>
+  </div>
+  <p style="margin-top:18px;font-size:13px;color:var(--color-text3);">Nimaš računa? <span onclick="window.app.navigate('register')" style="color:${C.tx};cursor:pointer;font-weight:500;">Registracija</span></p>
+</div>`;
+  }
+
+  _register() {
+    const C = this.C.blue;
+    return `<div style="padding:28px 24px 20px;display:flex;flex-direction:column;align-items:center;">
+  <div style="width:50px;height:50px;border-radius:14px;background:${C.bg};border:0.5px solid ${C.bd};display:flex;align-items:center;justify-content:center;margin-bottom:8px;">
+    <i class="ti ti-user-plus" style="font-size:24px;color:${C.tx};"></i>
+  </div>
+  <h1 style="font-size:20px;font-weight:500;margin:6px 0 3px;color:var(--color-text1);">Registracija</h1>
+  <p style="font-size:13px;color:var(--color-text2);margin:0 0 18px;">Ustvari nov račun</p>
+  ${this._errBox()}
+  <div style="width:100%;">
+    <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Ime</label>
+    <input id="reg-first" type="text" placeholder="Ime" style="margin-bottom:10px;"/>
+    <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Priimek</label>
+    <input id="reg-last" type="text" placeholder="Priimek" style="margin-bottom:10px;"/>
+    <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">E-poštni naslov</label>
+    <input id="reg-email" type="email" placeholder="email@primer.si" style="margin-bottom:10px;"/>
+    <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Geslo</label>
+    <input id="reg-pass" type="password" placeholder="Geslo" style="margin-bottom:20px;"/>
+    <button onclick="window.app.register()" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:${C.bd};color:#fff;border:none;border-radius:10px;">Ustvari račun</button>
+  </div>
+  <p style="margin-top:14px;font-size:13px;color:var(--color-text3);">Že imaš račun? <span onclick="window.app.navigate('login')" style="color:${C.tx};cursor:pointer;font-weight:500;">Prijava</span></p>
+</div>`;
+  }
+
+  _home() {
+    const user = this.state.currentUser;
+    const subjects = this.mySubjects();
+    const tasks = this.myTasks();
+    const done = tasks.filter(t=>t.done).length;
+    const total = this.totalTime();
+
+    let sessBar = '';
+    if (this.sessionController.isActive()) {
+      const s = this.subj(this.sessionController.getSubjectId());
+      const c = this.color(s?.color);
+      sessBar = `<div onclick="window.app.navigate('session')" style="margin:0 14px 10px;padding:11px 14px;background:${c.bg};border:0.5px solid ${c.bd};border-radius:14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+  <div style="display:flex;align-items:center;gap:9px;">
+    <div style="width:7px;height:7px;border-radius:50%;background:${c.bd};"></div>
+    <div>
+      <p style="margin:0;font-size:13px;font-weight:500;color:${c.tx};">Aktivna seja</p>
+      <p style="margin:0;font-size:11px;color:${c.tx};opacity:.75;">${s?.Name} &middot; <span id="sessmini">${this.fmts(this.sessionController.getSecs())}</span></p>
+    </div>
+  </div>
+  <i class="ti ti-chevron-right" style="font-size:15px;color:${c.tx};"></i>
+</div>`;
+    }
+
+    const cards = subjects.map(s => {
+      const c = this.color(s.color);
+      const pct = total > 0 ? Math.round(s.totalMinutes/total*100) : 0;
+      return `<div onclick="window.app.navigate('detail',{selectedSubjectId:${s.Subject_ID}})" style="padding:12px;background:var(--color-bg);border:0.5px solid var(--color-border3);border-radius:14px;cursor:pointer;">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
+    <div style="width:28px;height:28px;border-radius:7px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:${c.tx};">${this.short(s.Name)}</div>
+    <span style="font-size:14px;font-weight:500;color:var(--color-text1);">${s.Name}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-text2);margin-bottom:5px;"><span>${this.fmt(s.totalMinutes)}</span><span>${pct}%</span></div>
+  <div style="height:3px;background:var(--color-bg2);border-radius:2px;"><div style="height:100%;width:${pct}%;background:${c.bd};border-radius:2px;"></div></div>
+</div>`;
+    }).join('');
+
+    return `<div style="padding:0 0 8px;">
+  <div style="padding:14px 14px 10px;">
+    <p style="margin:0 0 1px;font-size:12px;color:var(--color-text2);">Dober dan,</p>
+    <h2 style="margin:0;font-size:20px;font-weight:500;color:var(--color-text1);">${user.Firstname} ${user.Lastname}</h2>
+  </div>
+  <div style="padding:0 14px 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+    <div style="padding:11px;background:var(--color-bg2);border-radius:10px;">
+      <p style="margin:0 0 3px;font-size:11px;color:var(--color-text2);">Skupaj časa</p>
+      <p style="margin:0;font-size:19px;font-weight:500;color:var(--color-text1);">${this.fmt(total)}</p>
+    </div>
+    <div style="padding:11px;background:var(--color-bg2);border-radius:10px;">
+      <p style="margin:0 0 3px;font-size:11px;color:var(--color-text2);">Naloge</p>
+      <p style="margin:0;font-size:19px;font-weight:500;color:var(--color-text1);">${done}/${tasks.length}</p>
+    </div>
+  </div>
+  ${sessBar}
+  <div style="padding:0 14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <p style="margin:0;font-size:13px;font-weight:500;color:var(--color-text2);">PREDMETI</p>
+      <span onclick="window.app.navigate('subjects')" style="font-size:12px;color:${this.C.blue.tx};cursor:pointer;">Prikaži vse</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:7px;">${cards}</div>
+  </div>
+</div>`;
+  }
+
+  _subjects() {
+    const subjects = this.mySubjects();
+    const rows = subjects.map(s => {
+      const c = this.color(s.color);
+      const tp = this.dataStore.topics.filter(t=>t.Subject_ID===s.Subject_ID);
+      const tk = this.dataStore.tasks.filter(t=>t.Subject_ID===s.Subject_ID);
+      const dk = tk.filter(t=>t.done).length;
+      return `<div onclick="window.app.navigate('detail',{selectedSubjectId:${s.Subject_ID}})" style="padding:13px 14px;background:var(--color-bg);border-bottom:0.5px solid var(--color-border3);display:flex;align-items:center;gap:11px;cursor:pointer;">
+  <div style="width:40px;height:40px;border-radius:10px;background:${c.bg};border:0.5px solid ${c.bd};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:${c.tx};flex-shrink:0;">${this.short(s.Name)}</div>
+  <div style="flex:1;min-width:0;">
+    <p style="margin:0 0 2px;font-size:15px;font-weight:500;color:var(--color-text1);">${s.Name}</p>
+    <p style="margin:0;font-size:12px;color:var(--color-text2);">${tp.length} tem &middot; ${this.fmt(s.totalMinutes)} &middot; ${dk}/${tk.length} nalog</p>
+  </div>
+  <i class="ti ti-chevron-right" style="font-size:15px;color:var(--color-text3);"></i>
+</div>`;
+    }).join('');
+
+    return `<div>
+  <div style="padding:14px 14px 12px;border-bottom:0.5px solid var(--color-border3);display:flex;justify-content:space-between;align-items:center;">
+    <h2 style="margin:0;font-size:18px;font-weight:500;color:var(--color-text1);">Predmeti</h2>
+    <button onclick="window.app.navigate('addSubject')" style="border:none;background:none;padding:4px;display:flex;align-items:center;">
+      <i class="ti ti-plus" style="font-size:20px;color:var(--color-text2);"></i>
+    </button>
+  </div>
+  ${rows}
+  ${subjects.length===0?'<p style="text-align:center;padding:40px 20px;font-size:14px;color:var(--color-text3);">Ni predmetov. Dodaj prvega!</p>':''}
+</div>`;
+  }
+
+  _addSubject() {
+    const swatches = this.colorKeys.map(k => {
+      const c = this.C[k];
+      return `<div id="sw-${k}" onclick="window.app.pickColor('${k}')" style="width:26px;height:26px;border-radius:50%;background:${c.bd};cursor:pointer;outline:${k==='blue'?`3px solid ${c.bd}`:'none'};outline-offset:2px;"></div>`;
+    }).join('');
+
+    return `<div style="padding:14px;">
+  <div style="display:flex;align-items:center;gap:9px;margin-bottom:20px;">
+    <button onclick="window.app.navigate('subjects')" style="border:none;background:none;padding:0;display:flex;align-items:center;color:var(--color-text2);">
+      <i class="ti ti-arrow-left" style="font-size:20px;"></i>
+    </button>
+    <h2 style="margin:0;font-size:18px;font-weight:500;color:var(--color-text1);">Nov predmet</h2>
+  </div>
+  ${this._errBox()}
+  <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Ime predmeta</label>
+  <input id="new-subj-name" type="text" placeholder="npr. Matematika" style="margin-bottom:16px;" onkeydown="if(event.key==='Enter')window.app.addSubject()"/>
+  <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:8px;">Barva</label>
+  <div style="display:flex;gap:10px;margin-bottom:24px;">${swatches}</div>
+  <input type="hidden" id="new-subj-color" value="blue"/>
+  <button onclick="window.app.addSubject()" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:${this.C.blue.bd};color:#fff;border:none;border-radius:10px;">Dodaj predmet</button>
+</div>`;
+  }
+
+  _detail() {
+    const s = this.subj(this.state.selectedSubjectId);
+    if (!s) return '<p style="padding:20px;color:var(--color-text2);">Predmet ni najden.</p>';
+    const c = this.color(s.color);
+    const topics = this.dataStore.topics.filter(t=>t.Subject_ID===s.Subject_ID);
+    const tasks  = this.dataStore.tasks.filter(t=>t.Subject_ID===s.Subject_ID);
+
+    const topicRows = topics.map(t=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:0.5px solid var(--color-border3);">
+  <i class="ti ti-bookmark" style="font-size:15px;color:${c.bd};"></i>
+  <span style="font-size:14px;color:var(--color-text1);">${t.Name}</span>
+</div>`).join('');
+
+    const taskRows = tasks.map(t=>`<div onclick="window.app.toggleTask(${t.Task_ID})" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid var(--color-border3);cursor:pointer;">
+  <div style="width:20px;height:20px;border-radius:5px;border:0.5px solid ${t.done?c.bd:'var(--color-border2)'};background:${t.done?c.bg:'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+    ${t.done?`<i class="ti ti-check" style="font-size:13px;color:${c.tx};"></i>`:''}
+  </div>
+  <span style="font-size:14px;${t.done?'text-decoration:line-through;color:var(--color-text3);':'color:var(--color-text1);'}">${t.text}</span>
+</div>`).join('');
+
+    return `<div>
+  <div style="padding:12px 14px;border-bottom:0.5px solid var(--color-border3);display:flex;align-items:center;gap:9px;">
+    <button onclick="window.app.navigate('subjects')" style="border:none;background:none;padding:0;display:flex;align-items:center;color:var(--color-text2);">
+      <i class="ti ti-arrow-left" style="font-size:20px;"></i>
+    </button>
+    <div style="width:34px;height:34px;border-radius:9px;background:${c.bg};border:0.5px solid ${c.bd};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:${c.tx};">${this.short(s.Name)}</div>
+    <div>
+      <h2 style="margin:0;font-size:16px;font-weight:500;color:var(--color-text1);">${s.Name}</h2>
+      <p style="margin:0;font-size:11px;color:var(--color-text2);">${this.fmt(s.totalMinutes)} skupaj</p>
+    </div>
+  </div>
+  <div style="padding:12px 14px 0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <p style="margin:0;font-size:11px;font-weight:500;color:var(--color-text2);">TEME</p>
+      <span onclick="window.app.navigate('addTopic')" style="font-size:12px;color:${c.tx};cursor:pointer;">+ Dodaj</span>
+    </div>
+    ${topicRows}
+    ${topics.length===0?'<p style="font-size:13px;color:var(--color-text3);padding:8px 0;">Ni tem.</p>':''}
+  </div>
+  <div style="padding:12px 14px 0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+      <p style="margin:0;font-size:11px;font-weight:500;color:var(--color-text2);">NALOGE</p>
+      <span onclick="window.app.navigate('addTask')" style="font-size:12px;color:${c.tx};cursor:pointer;">+ Dodaj</span>
+    </div>
+    ${taskRows}
+    ${tasks.length===0?'<p style="font-size:13px;color:var(--color-text3);padding:8px 0;">Ni nalog.</p>':''}
+  </div>
+  <div style="padding:14px;">
+    <button onclick="window.app.startSession(${s.Subject_ID})" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:${c.bd};color:#fff;border:none;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:7px;">
+      <i class="ti ti-player-play" style="font-size:15px;"></i>Začni sejo
+    </button>
+  </div>
+</div>`;
+  }
+
+  _addTopic() {
+    const s = this.subj(this.state.selectedSubjectId);
+    const c = this.color(s?.color);
+    return `<div style="padding:14px;">
+  <div style="display:flex;align-items:center;gap:9px;margin-bottom:20px;">
+    <button onclick="window.app.navigate('detail')" style="border:none;background:none;padding:0;display:flex;align-items:center;color:var(--color-text2);">
+      <i class="ti ti-arrow-left" style="font-size:20px;"></i>
+    </button>
+    <h2 style="margin:0;font-size:18px;font-weight:500;color:var(--color-text1);">Nova tema</h2>
+  </div>
+  ${this._errBox()}
+  <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Ime teme</label>
+  <input id="new-topic-name" type="text" placeholder="npr. Integrali" style="margin-bottom:20px;" onkeydown="if(event.key==='Enter')window.app.addTopic()"/>
+  <button onclick="window.app.addTopic()" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:${c.bd};color:#fff;border:none;border-radius:10px;">Dodaj temo</button>
+</div>`;
+  }
+
+  _addTask() {
+    const s = this.subj(this.state.selectedSubjectId);
+    const c = this.color(s?.color);
+    return `<div style="padding:14px;">
+  <div style="display:flex;align-items:center;gap:9px;margin-bottom:20px;">
+    <button onclick="window.app.navigate('detail')" style="border:none;background:none;padding:0;display:flex;align-items:center;color:var(--color-text2);">
+      <i class="ti ti-arrow-left" style="font-size:20px;"></i>
+    </button>
+    <h2 style="margin:0;font-size:18px;font-weight:500;color:var(--color-text1);">Nova naloga</h2>
+  </div>
+  ${this._errBox()}
+  <label style="font-size:12px;color:var(--color-text2);display:block;margin-bottom:3px;">Opis naloge</label>
+  <input id="new-task-text" type="text" placeholder="npr. Preberi poglavje 3" style="margin-bottom:20px;" onkeydown="if(event.key==='Enter')window.app.addTask()"/>
+  <button onclick="window.app.addTask()" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:${c.bd};color:#fff;border:none;border-radius:10px;">Dodaj nalogo</button>
+</div>`;
+  }
+
+  _session() {
+    if (!this.sessionController.isActive()) {
+      return `<div style="padding:60px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;">
+  <i class="ti ti-player-play" style="font-size:44px;color:var(--color-text3);"></i>
+  <p style="font-size:14px;color:var(--color-text2);margin:12px 0 20px;">Ni aktivne seje.</p>
+  <button onclick="window.app.subjectSelector.showSubjects()" style="padding:10px 20px;background:${this.C.blue.bd};color:#fff;border:none;border-radius:10px;font-size:14px;">Izberi predmet</button>
+</div>`;
+    }
+
+    const s = this.subj(this.sessionController.getSubjectId());
+    const c = this.color(s?.color);
+
+    if (this.state.showDialog) {
+      return `<div style="height:100%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.4);">
+  <div style="background:var(--color-bg);border-radius:14px;padding:22px;margin:20px;width:100%;">
+    <h3 style="margin:0 0 7px;font-size:16px;font-weight:500;color:var(--color-text1);">Zaključi sejo?</h3>
+    <p style="margin:0 0 18px;font-size:13px;color:var(--color-text2);">Seja (${this.fmts(this.sessionController.getSecs())}) bo shranjena v statistiko.</p>
+    <div style="display:flex;gap:8px;">
+      <button onclick="window.app.state.showDialog=false;window.app.render()" style="flex:1;padding:10px;font-size:14px;border-radius:10px;background:var(--color-bg2);border:0.5px solid var(--color-border2);color:var(--color-text1);">Prekliči</button>
+      <button onclick="window.app.endSession()" style="flex:1;padding:10px;font-size:14px;font-weight:500;background:${c.bd};color:#fff;border:none;border-radius:10px;">Potrdi</button>
+    </div>
+  </div>
+</div>`;
+    }
+
+    return `<div style="padding:22px 22px 0;display:flex;flex-direction:column;align-items:center;">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:36px;align-self:flex-start;">
+    <div style="width:7px;height:7px;border-radius:50%;background:${c.bd};"></div>
+    <span style="font-size:12px;color:var(--color-text2);">Aktivna seja</span>
+  </div>
+  <div style="width:34px;height:34px;border-radius:9px;background:${c.bg};border:0.5px solid ${c.bd};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:${c.tx};margin-bottom:7px;">${this.short(s.Name)}</div>
+  <p style="margin:0 0 3px;font-size:19px;font-weight:500;color:var(--color-text1);">${s.Name}</p>
+  <p style="margin:0 0 32px;font-size:12px;color:var(--color-text2);">Trajanje seje</p>
+  <div id="timer-disp" style="font-size:54px;font-weight:500;font-variant-numeric:tabular-nums;margin-bottom:14px;color:var(--color-text1);">${this.fmts(this.sessionController.getSecs())}</div>
+  <div style="padding:5px 12px;background:${c.bg};border-radius:20px;font-size:12px;color:${c.tx};margin-bottom:36px;">${this.fmt(s.totalMinutes)} skupaj</div>
+  <button onclick="window.app.state.showDialog=true;window.app.render()" style="width:100%;padding:12px;font-size:15px;font-weight:500;background:var(--color-bg2);color:var(--color-text1);border:0.5px solid var(--color-border2);border-radius:10px;display:flex;align-items:center;justify-content:center;gap:7px;">
+    <i class="ti ti-player-stop" style="font-size:15px;"></i>Zaključi sejo
+  </button>
+</div>`;
+  }
+
+  _stats() {
+    const subjects = this.mySubjects();
+    const tasks    = this.myTasks();
+    const total    = this.totalTime();
+    const done     = tasks.filter(t=>t.done).length;
+    const pct      = tasks.length>0 ? Math.round(done/tasks.length*100) : 0;
+    const mx       = subjects.length>0 ? Math.max(...subjects.map(s=>s.totalMinutes), 1) : 1;
+    const sessCount = this.statsController.getSessionCount(this.state.currentUser.User_ID);
+
+    const bars = subjects.map(s => {
+      const c = this.color(s.color);
+      const bp = Math.round(s.totalMinutes/mx*100);
+      return `<div style="margin-bottom:11px;">
+  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+    <span style="font-size:13px;color:var(--color-text1);">${s.Name}</span>
+    <span style="font-size:13px;color:var(--color-text2);">${this.fmt(s.totalMinutes)}</span>
+  </div>
+  <div style="height:8px;background:var(--color-bg2);border-radius:4px;"><div style="height:100%;width:${bp}%;background:${c.bd};border-radius:4px;"></div></div>
+</div>`;
+    }).join('');
+
+    return `<div style="padding:14px;">
+  <h2 style="margin:0 0 14px;font-size:18px;font-weight:500;color:var(--color-text1);">Statistika</h2>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px;">
+    <div style="padding:11px;background:var(--color-bg2);border-radius:10px;">
+      <p style="margin:0 0 3px;font-size:11px;color:var(--color-text2);">Skupaj časa</p>
+      <p style="margin:0;font-size:19px;font-weight:500;color:var(--color-text1);">${this.fmt(total)}</p>
+    </div>
+    <div style="padding:11px;background:var(--color-bg2);border-radius:10px;">
+      <p style="margin:0 0 3px;font-size:11px;color:var(--color-text2);">Sej skupaj</p>
+      <p style="margin:0;font-size:19px;font-weight:500;color:var(--color-text1);">${sessCount}</p>
+    </div>
+  </div>
+  <div style="padding:13px;background:var(--color-bg);border:0.5px solid var(--color-border3);border-radius:14px;margin-bottom:10px;">
+    <p style="margin:0 0 11px;font-size:11px;font-weight:500;color:var(--color-text2);">ČAS PO PREDMETIH</p>
+    ${bars||'<p style="font-size:13px;color:var(--color-text3);">Ni podatkov.</p>'}
+  </div>
+  <div style="padding:13px;background:var(--color-bg);border:0.5px solid var(--color-border3);border-radius:14px;">
+    <p style="margin:0 0 9px;font-size:11px;font-weight:500;color:var(--color-text2);">NAPREDEK NALOG</p>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;height:9px;background:var(--color-bg2);border-radius:5px;">
+        <div style="height:100%;width:${pct}%;background:${this.C.teal.bd};border-radius:5px;"></div>
+      </div>
+      <span style="font-size:14px;font-weight:500;min-width:36px;color:var(--color-text1);">${done}/${tasks.length}</span>
+    </div>
+  </div>
+</div>`;
+  }
+
+  _profile() {
+    const user = this.state.currentUser;
+    const C    = this.C.blue;
+    const initials = (user.Firstname[0]+user.Lastname[0]).toUpperCase();
+    const sessCount = this.statsController.getSessionCount(user.User_ID);
+    const total     = this.totalTime();
+
+    return `<div style="padding:22px 14px;">
+  <h2 style="margin:0 0 18px;font-size:18px;font-weight:500;color:var(--color-text1);">Profil</h2>
+  <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:16px;">
+    <div style="width:60px;height:60px;border-radius:50%;background:${C.bg};border:0.5px solid ${C.bd};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:500;color:${C.tx};margin-bottom:9px;">${initials}</div>
+    <p style="margin:0 0 3px;font-size:16px;font-weight:500;color:var(--color-text1);">${user.Firstname} ${user.Lastname}</p>
+    <p style="margin:0;font-size:13px;color:var(--color-text2);">${user.Email}</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px;">
+    <div style="padding:11px;background:var(--color-bg2);border-radius:10px;">
+      <p style="margin:0 0 2px;font-size:11px;color:var(--color-text2);">Skupaj časa</p>
+      <p style="margin:0;font-size:17px;font-weight:500;color:var(--color-text1);">${this.fmt(total)}</p>
+    </div>
+    <div style="padding:11px;background:var(--color-bg2);border-radius:10px;">
+      <p style="margin:0 0 2px;font-size:11px;color:var(--color-text2);">Sej</p>
+      <p style="margin:0;font-size:17px;font-weight:500;color:var(--color-text1);">${sessCount}</p>
+    </div>
+  </div>
+  <div style="background:var(--color-bg);border:0.5px solid var(--color-border3);border-radius:14px;overflow:hidden;margin-bottom:10px;">
+    <div style="padding:12px 14px;border-bottom:0.5px solid var(--color-border3);display:flex;justify-content:space-between;">
+      <span style="font-size:14px;color:var(--color-text1);">Ime in priimek</span>
+      <span style="font-size:14px;color:var(--color-text2);">${user.Firstname} ${user.Lastname}</span>
+    </div>
+    <div style="padding:12px 14px;border-bottom:0.5px solid var(--color-border3);display:flex;justify-content:space-between;">
+      <span style="font-size:14px;color:var(--color-text1);">E-pošta</span>
+      <span style="font-size:14px;color:var(--color-text2);">${user.Email}</span>
+    </div>
+    <div style="padding:12px 14px;display:flex;justify-content:space-between;">
+      <span style="font-size:14px;color:var(--color-text1);">ID</span>
+      <span style="font-size:14px;color:var(--color-text2);">#${user.User_ID}</span>
+    </div>
+  </div>
+  <div style="background:var(--color-bg);border:0.5px solid var(--color-border3);border-radius:14px;overflow:hidden;">
+    <div onclick="window.app.logout()" style="padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;">
+      <span style="font-size:14px;color:var(--color-danger);">Odjava</span>
+      <i class="ti ti-logout" style="font-size:15px;color:var(--color-danger);"></i>
+    </div>
+  </div>
+</div>`;
+  }
+}
+
+window.app = new App();
+</script>
+</body>
+</html>
