@@ -97,7 +97,7 @@ public class StudySessionUI extends JFrame {
         setTitle("StudyBuddy");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(390, 760);
-        setMinimumSize(new Dimension(360, 640));
+        setResizable(false);
         setLocationRelativeTo(null);
         try { UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName()); }
         catch (Exception ignored) {}
@@ -221,14 +221,16 @@ public class StudySessionUI extends JFrame {
 
         JLabel stopIcon = new JLabel("⏱", SwingConstants.CENTER);
         stopIcon.setFont(new Font(FONT, Font.PLAIN, 30));
-        stopIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
+        stopIcon.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stopIcon.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         timerCard.add(stopIcon);
         timerCard.add(Box.createVerticalStrut(6));
 
         timerLabel = new JLabel("00:00", SwingConstants.CENTER);
         timerLabel.setFont(new Font(FONT, Font.PLAIN, 72));
         timerLabel.setForeground(DARK);
-        timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        timerLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        timerLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
         timerCard.add(timerLabel);
         timerCard.add(Box.createVerticalStrut(22));
 
