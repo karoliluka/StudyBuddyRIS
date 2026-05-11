@@ -5,5 +5,7 @@ __MACOSX/
 # Claude Code settings
 .claude/
 
-# Bundled JRE (too large for GitHub)
-dist/StudyBuddy/runtime/
+# Build artifacts
+out/
+manifest.txt
+dist/
