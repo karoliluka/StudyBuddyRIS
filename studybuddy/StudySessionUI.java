@@ -18,7 +18,7 @@ public class StudySessionUI extends JFrame {
 
     private CardLayout cardLayout;
     private JPanel     cardPanel;
-    private JLabel[]   navIcons = new JLabel[4];
+    private JPanel[]   navBars  = new JPanel[4];
     private JLabel[]   navTexts = new JLabel[4];
     private static final String[] SCREENS = {"sessions", "timer", "stats", "subjects"};
 
@@ -127,36 +127,34 @@ public class StudySessionUI extends JFrame {
         JPanel bar = new JPanel(new GridLayout(1, 4));
         bar.setBackground(SURFACE);
         bar.setBorder(new MatteBorder(1, 0, 0, 0, SEP));
-        bar.setPreferredSize(new Dimension(0, 62));
+        bar.setPreferredSize(new Dimension(0, 52));
 
-        String[] icons  = { "☰", "⏳", "≈", "⊞" };
         String[] labels = { "Seje", "Timer", "Statistika", "Predmeti" };
 
         for (int i = 0; i < 4; i++) {
             final int idx = i;
 
-            JLabel icon = new JLabel(icons[i], SwingConstants.CENTER);
-            icon.setFont(new Font(FONT, Font.PLAIN, 22));
-            icon.setAlignmentX(Component.CENTER_ALIGNMENT);
+            // Accent indicator line at top of each tab
+            JPanel indicator = new JPanel();
+            indicator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 3));
+            indicator.setPreferredSize(new Dimension(0, 3));
 
             JLabel txt = new JLabel(labels[i], SwingConstants.CENTER);
-            txt.setFont(new Font(FONT, Font.PLAIN, 10));
             txt.setAlignmentX(Component.CENTER_ALIGNMENT);
 
             JPanel item = new JPanel();
             item.setLayout(new BoxLayout(item, BoxLayout.Y_AXIS));
             item.setBackground(SURFACE);
             item.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            item.add(indicator);
             item.add(Box.createVerticalGlue());
-            item.add(icon);
-            item.add(Box.createVerticalStrut(2));
             item.add(txt);
             item.add(Box.createVerticalGlue());
             item.addMouseListener(new MouseAdapter() {
                 @Override public void mouseClicked(MouseEvent e) { switchTo(idx); }
             });
 
-            navIcons[i] = icon;
+            navBars[i]  = indicator;
             navTexts[i] = txt;
             bar.add(item);
         }
@@ -168,8 +166,9 @@ public class StudySessionUI extends JFrame {
         cardLayout.show(cardPanel, SCREENS[idx]);
         for (int i = 0; i < 4; i++) {
             boolean on = (i == idx);
-            navIcons[i].setForeground(on ? ACCENT : NAV_OFF);
+            navBars[i].setBackground(on ? ACCENT : SURFACE);
             navTexts[i].setForeground(on ? ACCENT : NAV_OFF);
+            navTexts[i].setFont(new Font(FONT, on ? Font.BOLD : Font.PLAIN, 12));
         }
     }
 
@@ -218,13 +217,6 @@ public class StudySessionUI extends JFrame {
 
         // ── Main timer card ──────────────────────────────────────────
         JPanel timerCard = card();
-
-        JLabel stopIcon = new JLabel("⏱", SwingConstants.CENTER);
-        stopIcon.setFont(new Font(FONT, Font.PLAIN, 30));
-        stopIcon.setAlignmentX(Component.LEFT_ALIGNMENT);
-        stopIcon.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        timerCard.add(stopIcon);
-        timerCard.add(Box.createVerticalStrut(6));
 
         timerLabel = new JLabel("00:00", SwingConstants.CENTER);
         timerLabel.setFont(new Font(FONT, Font.PLAIN, 72));
