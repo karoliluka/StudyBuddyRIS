@@ -22,38 +22,52 @@ public class StudySessionUI extends JFrame {
     private JLabel[]   navTexts = new JLabel[4];
     private static final String[] SCREENS = {"sessions", "timer", "stats", "subjects"};
 
-    private DefaultTableModel     sessionTableModel;
-    private JTable                sessionTable;
+    // Sessions
+    private DefaultTableModel sessionTableModel;
+    private JTable            sessionTable;
 
-    private JComboBox<String>     timerSubjectCombo;
-    private JLabel                timerLabel;
-    private JButton               btnStart;
-    private JButton               btnStop;
-    private Timer                 swingTimer;
-    private int                   elapsedSeconds = 0;
+    // Timer
+    private JComboBox<String> timerSubjectCombo;
+    private JLabel            timerLabel;
+    private JButton           btnStart;
+    private JButton           btnStop;
+    private Timer             swingTimer;
+    private int               elapsedSeconds = 0;
 
-    private JComboBox<String>     manualSubjectCombo;
-    private JSpinner              manualDurationSpinner;
+    // Manual entry (collapsible)
+    private JPanel            manualPanel;
+    private JLabel            forgetLink;
+    private JComboBox<String> manualSubjectCombo;
+    private JSpinner          manualDurationSpinner;
 
-    private JLabel                lblTotal;
-    private JLabel                lblAvg;
-    private JLabel                lblCount;
-    private JLabel                lblBest;
-    private JPanel                barsPanel;
+    // Stats
+    private JLabel lblTotal;
+    private JLabel lblAvg;
+    private JLabel lblCount;
+    private JLabel lblBest;
+    private JPanel barsPanel;
 
-    private DefaultListModel<String> subjectListModel;
-    private JTextField            newSubjectField;
+    // Subjects
+    private DefaultTableModel subjectTableModel;
+    private JTable            subjectTable;
+    private JTextField        newSubjectField;
 
-    private static final Color BG       = new Color(248, 248, 250);
+    // ── Color palette ────────────────────────────────────────────────
+    // #EEF1EF  #DC965A  #242325
+    private static final Color BG       = new Color(238, 241, 239);
     private static final Color SURFACE  = Color.WHITE;
-    private static final Color ACCENT   = new Color(99, 102, 241);
-    private static final Color ACCENT_L = new Color(99, 102, 241, 18);
-    private static final Color OK       = new Color(34, 197, 94);
-    private static final Color ERR      = new Color(239, 68, 68);
-    private static final Color TEXT     = new Color(17, 24, 39);
-    private static final Color TEXT2    = new Color(107, 114, 128);
-    private static final Color SEP      = new Color(229, 231, 235);
-    private static final Color NAV_OFF  = new Color(189, 189, 189);
+    private static final Color ACCENT   = new Color(220, 150, 90);
+    private static final Color ACCENT_L = new Color(220, 150, 90, 45);
+    private static final Color DARK     = new Color(36, 35, 37);
+    private static final Color TEXT     = DARK;
+    private static final Color TEXT2    = new Color(120, 118, 122);
+    private static final Color SEP      = new Color(208, 213, 209);
+    private static final Color NAV_OFF  = new Color(175, 173, 177);
+    private static final Color OK       = new Color(52, 168, 83);
+    private static final Color ERR      = new Color(210, 50, 65);
+    private static final Color ROW_ALT  = new Color(244, 246, 244);
+
+    private static final int PAD = 16;
 
     private static String FONT = "SansSerif";
 
@@ -85,7 +99,6 @@ public class StudySessionUI extends JFrame {
         setSize(390, 760);
         setMinimumSize(new Dimension(360, 640));
         setLocationRelativeTo(null);
-
         try { UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName()); }
         catch (Exception ignored) {}
     }
@@ -102,22 +115,22 @@ public class StudySessionUI extends JFrame {
         cardPanel.add(buildStatsTab(),     "stats");
         cardPanel.add(buildSubjectsTab(),  "subjects");
 
-        root.add(cardPanel,       BorderLayout.CENTER);
+        root.add(cardPanel,        BorderLayout.CENTER);
         root.add(buildBottomNav(), BorderLayout.SOUTH);
         setContentPane(root);
     }
 
-    // ----------------------------------------------------------------
-    //  Bottom nav
-    // ----------------------------------------------------------------
+    // ================================================================
+    //  Bottom navigation bar
+    // ================================================================
     private JPanel buildBottomNav() {
         JPanel bar = new JPanel(new GridLayout(1, 4));
         bar.setBackground(SURFACE);
         bar.setBorder(new MatteBorder(1, 0, 0, 0, SEP));
         bar.setPreferredSize(new Dimension(0, 62));
 
-        String[] icons  = {"☰", "◷", "≈", "⊞"};
-        String[] labels = {"Seje", "Timer", "Statistika", "Predmeti"};
+        String[] icons  = { "☰", "⏳", "≈", "⊞" };
+        String[] labels = { "Seje", "Timer", "Statistika", "Predmeti" };
 
         for (int i = 0; i < 4; i++) {
             final int idx = i;
@@ -161,56 +174,30 @@ public class StudySessionUI extends JFrame {
     }
 
     // ================================================================
-    //  Screen: Seje
+    //  Screen: Seje — Zgodovina
     // ================================================================
     private JPanel buildSessionsTab() {
         JPanel p = new JPanel(new BorderLayout());
         p.setBackground(BG);
-        p.add(pageHeader("Moje seje"), BorderLayout.NORTH);
+        p.add(pageHeader("Zgodovina"), BorderLayout.NORTH);
 
         String[] cols = {"#", "Predmet", "Datum", "Trajanje"};
         sessionTableModel = new DefaultTableModel(cols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
-        sessionTable = new JTable(sessionTableModel) {
-            @Override public Component prepareRenderer(TableCellRenderer r, int row, int col) {
-                Component c = super.prepareRenderer(r, row, col);
-                if (!isRowSelected(row)) c.setBackground(row % 2 == 0 ? SURFACE : BG);
-                else c.setBackground(ACCENT_L);
-                return c;
-            }
-        };
-        sessionTable.setRowHeight(42);
-        sessionTable.setFont(new Font(FONT, Font.PLAIN, 13));
-        sessionTable.setShowGrid(false);
-        sessionTable.setIntercellSpacing(new Dimension(0, 0));
-        sessionTable.setFillsViewportHeight(true);
-        sessionTable.setSelectionBackground(ACCENT_L);
-        sessionTable.setSelectionForeground(TEXT);
+        sessionTable = styledTable(sessionTableModel);
+        // hide ID column
+        hideColumn(sessionTable, 0);
+        sessionTable.getColumnModel().getColumn(3).setMaxWidth(105);
 
-        JTableHeader th = sessionTable.getTableHeader();
-        th.setFont(new Font(FONT, Font.BOLD, 11));
-        th.setBackground(BG);
-        th.setForeground(TEXT2);
-        th.setBorder(new MatteBorder(0, 0, 1, 0, SEP));
-        th.setReorderingAllowed(false);
+        JScrollPane scroll = tableScroll(sessionTable);
+        JPanel wrap = padded(scroll);
+        p.add(wrap, BorderLayout.CENTER);
 
-        // Hide ID column
-        TableColumn idCol = sessionTable.getColumnModel().getColumn(0);
-        idCol.setMinWidth(0); idCol.setMaxWidth(0); idCol.setWidth(0);
-        sessionTable.getColumnModel().getColumn(3).setMaxWidth(100);
-
-        JScrollPane scroll = new JScrollPane(sessionTable);
-        scroll.setBorder(null);
-        scroll.getViewport().setBackground(SURFACE);
-        p.add(scroll, BorderLayout.CENTER);
-
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setBackground(BG);
-        footer.setBorder(new EmptyBorder(10, 16, 14, 16));
-        JButton btnDelete = actionButton("Izbriši izbrano", ERR);
-        btnDelete.addActionListener(e -> deleteSelectedSession());
-        footer.add(btnDelete, BorderLayout.CENTER);
+        JPanel footer = footer();
+        JButton btnDel = actionButton("Izbriši izbrano", ERR);
+        btnDel.addActionListener(e -> deleteSelectedSession());
+        footer.add(btnDel, BorderLayout.CENTER);
         p.add(footer, BorderLayout.SOUTH);
 
         return p;
@@ -227,23 +214,30 @@ public class StudySessionUI extends JFrame {
         JPanel body = new JPanel();
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBackground(BG);
-        body.setBorder(new EmptyBorder(10, 0, 10, 0));
+        body.setBorder(new EmptyBorder(PAD, PAD, PAD, PAD));
 
-        // Timer card
+        // ── Main timer card ──────────────────────────────────────────
         JPanel timerCard = card();
+
+        JLabel stopIcon = new JLabel("⏱", SwingConstants.CENTER);
+        stopIcon.setFont(new Font(FONT, Font.PLAIN, 30));
+        stopIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
+        timerCard.add(stopIcon);
+        timerCard.add(Box.createVerticalStrut(6));
+
+        timerLabel = new JLabel("00:00", SwingConstants.CENTER);
+        timerLabel.setFont(new Font(FONT, Font.PLAIN, 72));
+        timerLabel.setForeground(DARK);
+        timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        timerCard.add(timerLabel);
+        timerCard.add(Box.createVerticalStrut(22));
+
         timerCard.add(chipLabel("PREDMET"));
-        timerCard.add(Box.createVerticalStrut(8));
+        timerCard.add(Box.createVerticalStrut(6));
         timerSubjectCombo = combo();
         timerSubjectCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
         timerCard.add(timerSubjectCombo);
-        timerCard.add(Box.createVerticalStrut(20));
-
-        timerLabel = new JLabel("00:00", SwingConstants.CENTER);
-        timerLabel.setFont(new Font(FONT, Font.PLAIN, 64));
-        timerLabel.setForeground(TEXT);
-        timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        timerCard.add(timerLabel);
-        timerCard.add(Box.createVerticalStrut(20));
+        timerCard.add(Box.createVerticalStrut(16));
 
         JPanel btnRow = new JPanel(new GridLayout(1, 2, 10, 0));
         btnRow.setOpaque(false);
@@ -259,26 +253,34 @@ public class StudySessionUI extends JFrame {
         timerCard.add(btnRow);
 
         body.add(timerCard);
-        body.add(Box.createVerticalStrut(8));
+        body.add(Box.createVerticalStrut(6));
 
-        // Manual entry card
-        JPanel manCard = card();
-        manCard.add(chipLabel("ROČNI VNOS"));
-        manCard.add(Box.createVerticalStrut(10));
+        // ── "Si pozabil beležiti?" toggle ─────────────────────────
+        forgetLink = new JLabel("  Si pozabil beležiti?  →");
+        forgetLink.setFont(new Font(FONT, Font.PLAIN, 13));
+        forgetLink.setForeground(ACCENT);
+        forgetLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        forgetLink.setAlignmentX(Component.LEFT_ALIGNMENT);
+        forgetLink.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        body.add(forgetLink);
+        body.add(Box.createVerticalStrut(4));
+
+        // ── Manual entry card (hidden by default) ─────────────────
+        manualPanel = card();
+        manualPanel.setVisible(false);
+
+        manualPanel.add(chipLabel("ROČNI VNOS"));
+        manualPanel.add(Box.createVerticalStrut(6));
+        manualPanel.add(chipLabel("PREDMET"));
+        manualPanel.add(Box.createVerticalStrut(6));
         manualSubjectCombo = combo();
         manualSubjectCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        manCard.add(manualSubjectCombo);
-        manCard.add(Box.createVerticalStrut(8));
-
-        JPanel durRow = new JPanel();
-        durRow.setOpaque(false);
-        durRow.setLayout(new BoxLayout(durRow, BoxLayout.X_AXIS));
-        durRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        durRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        manualPanel.add(manualSubjectCombo);
+        manualPanel.add(Box.createVerticalStrut(12));
 
         manualDurationSpinner = new JSpinner(new SpinnerNumberModel(30, 1, 600, 5));
         manualDurationSpinner.setFont(new Font(FONT, Font.PLAIN, 13));
-        manualDurationSpinner.setMaximumSize(new Dimension(80, 38));
+        manualDurationSpinner.setMaximumSize(new Dimension(90, 38));
         styleSpinner(manualDurationSpinner);
 
         JLabel minLbl = new JLabel(" min");
@@ -288,15 +290,41 @@ public class StudySessionUI extends JFrame {
         JButton btnManual = actionButton("Dodaj sejo", ACCENT);
         btnManual.addActionListener(e -> createManualSession());
 
+        JPanel durRow = new JPanel();
+        durRow.setOpaque(false);
+        durRow.setLayout(new BoxLayout(durRow, BoxLayout.X_AXIS));
+        durRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        durRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
         durRow.add(manualDurationSpinner);
         durRow.add(minLbl);
         durRow.add(Box.createHorizontalGlue());
         durRow.add(btnManual);
-        manCard.add(durRow);
+        manualPanel.add(durRow);
 
-        body.add(manCard);
+        body.add(manualPanel);
 
-        p.add(body, BorderLayout.CENTER);
+        // Toggle
+        forgetLink.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                boolean show = !manualPanel.isVisible();
+                manualPanel.setVisible(show);
+                forgetLink.setText(show
+                    ? "  Si pozabil beležiti?  ↑"
+                    : "  Si pozabil beležiti?  →");
+                body.revalidate();
+                body.repaint();
+            }
+        });
+
+        JPanel wrap = new JPanel(new BorderLayout());
+        wrap.setBackground(BG);
+        wrap.add(body, BorderLayout.NORTH);
+
+        JScrollPane scroll = new JScrollPane(wrap);
+        scroll.setBorder(null);
+        scroll.getViewport().setBackground(BG);
+        p.add(scroll, BorderLayout.CENTER);
+
         return p;
     }
 
@@ -311,18 +339,18 @@ public class StudySessionUI extends JFrame {
         JPanel body = new JPanel();
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBackground(BG);
-        body.setBorder(new EmptyBorder(16, 16, 16, 16));
+        body.setBorder(new EmptyBorder(PAD, PAD, PAD, PAD));
 
         JPanel grid = new JPanel(new GridLayout(2, 2, 10, 10));
         grid.setOpaque(false);
         grid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 140));
         grid.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblTotal = metricCard(grid, "Skupaj minut", "0");
+        lblTotal = metricCard(grid, "Skupaj minut",   "0");
         lblAvg   = metricCard(grid, "Povprečje/sejo", "0");
-        lblCount = metricCard(grid, "Število sej", "0");
-        lblBest  = metricCard(grid, "Najboljši", "—");
+        lblCount = metricCard(grid, "Število sej",    "0");
+        lblBest  = metricCard(grid, "Najboljši",      "—");
         body.add(grid);
-        body.add(Box.createVerticalStrut(16));
+        body.add(Box.createVerticalStrut(PAD));
 
         JLabel chartLbl = chipLabel("PO PREDMETIH");
         chartLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -340,59 +368,44 @@ public class StudySessionUI extends JFrame {
         scroll.getViewport().setBackground(BG);
         p.add(scroll, BorderLayout.CENTER);
 
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setBackground(BG);
-        footer.setBorder(new EmptyBorder(8, 16, 14, 16));
+        JPanel foot = footer();
         JButton btnRefresh = actionButton("Osveži statistike", ACCENT);
         btnRefresh.addActionListener(e -> showStats());
-        footer.add(btnRefresh, BorderLayout.CENTER);
-        p.add(footer, BorderLayout.SOUTH);
+        foot.add(btnRefresh, BorderLayout.CENTER);
+        p.add(foot, BorderLayout.SOUTH);
 
         return p;
     }
 
     // ================================================================
-    //  Screen: Predmeti
+    //  Screen: Predmeti (tabela)
     // ================================================================
     private JPanel buildSubjectsTab() {
         JPanel p = new JPanel(new BorderLayout());
         p.setBackground(BG);
         p.add(pageHeader("Predmeti"), BorderLayout.NORTH);
 
-        subjectListModel = new DefaultListModel<>();
-        JList<String> list = new JList<>(subjectListModel);
-        list.setFont(new Font(FONT, Font.PLAIN, 14));
-        list.setBackground(SURFACE);
-        list.setSelectionBackground(ACCENT_L);
-        list.setSelectionForeground(TEXT);
-        list.setFixedCellHeight(46);
-        list.setBorder(new EmptyBorder(4, 20, 4, 20));
-        list.setCellRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> l, Object v,
-                    int i, boolean sel, boolean foc) {
-                super.getListCellRendererComponent(l, v, i, sel, foc);
-                setBorder(new EmptyBorder(0, 0, 0, 0));
-                setFont(new Font(FONT, Font.PLAIN, 14));
-                if (!sel) setBackground(i % 2 == 0 ? SURFACE : BG);
-                return this;
-            }
-        });
+        String[] cols = {"#", "Ime predmeta"};
+        subjectTableModel = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        subjectTable = styledTable(subjectTableModel);
+        subjectTable.getColumnModel().getColumn(0).setMaxWidth(52);
+        subjectTable.getColumnModel().getColumn(0).setPreferredWidth(42);
 
-        JScrollPane scroll = new JScrollPane(list);
-        scroll.setBorder(null);
-        scroll.getViewport().setBackground(SURFACE);
-        p.add(scroll, BorderLayout.CENTER);
+        JScrollPane scroll = tableScroll(subjectTable);
+        JPanel wrap = padded(scroll);
+        p.add(wrap, BorderLayout.CENTER);
 
-        JPanel footer = new JPanel(new BorderLayout(10, 0));
-        footer.setBackground(BG);
-        footer.setBorder(new EmptyBorder(10, 16, 14, 16));
+        JPanel foot = footer();
         newSubjectField = field("Ime predmeta...");
         JButton btnAdd = actionButton("Dodaj", ACCENT);
         btnAdd.addActionListener(e -> addSubject());
         newSubjectField.addActionListener(e -> addSubject());
-        footer.add(newSubjectField, BorderLayout.CENTER);
-        footer.add(btnAdd, BorderLayout.EAST);
-        p.add(footer, BorderLayout.SOUTH);
+        foot.add(newSubjectField, BorderLayout.CENTER);
+        foot.add(Box.createHorizontalStrut(8), BorderLayout.NORTH); // ignored; gap via layout
+        foot.add(btnAdd, BorderLayout.EAST);
+        p.add(foot, BorderLayout.SOUTH);
 
         return p;
     }
@@ -410,8 +423,8 @@ public class StudySessionUI extends JFrame {
             Subject sub  = context.findSubject(s.getSubjectId());
             String  name = (sub != null) ? sub.getName() : "—";
             sessionTableModel.addRow(new Object[]{
-                s.getStudySessionId(), name, s.getFormattedDate(),
-                s.getDurationMinutes() + " min"
+                s.getStudySessionId(), name,
+                s.getFormattedDate(), s.getDurationMinutes() + " min"
             });
         }
     }
@@ -446,7 +459,7 @@ public class StudySessionUI extends JFrame {
     }
 
     // ================================================================
-    //  Timer
+    //  Timer logic
     // ================================================================
     private void startTimer() {
         elapsedSeconds = 0;
@@ -454,7 +467,8 @@ public class StudySessionUI extends JFrame {
         btnStop.setEnabled(true);
         swingTimer = new Timer(1000, e -> {
             elapsedSeconds++;
-            timerLabel.setText(String.format("%02d:%02d", elapsedSeconds / 60, elapsedSeconds % 60));
+            timerLabel.setText(String.format("%02d:%02d",
+                elapsedSeconds / 60, elapsedSeconds % 60));
         });
         swingTimer.start();
     }
@@ -487,6 +501,8 @@ public class StudySessionUI extends JFrame {
         if (subject == null) { showError("Izberite predmet."); return; }
         if (sessionController.createFromTimer(subject, dur)) {
             toast("Seja dodana · " + dur + " min");
+            manualPanel.setVisible(false);
+            forgetLink.setText("  Si pozabil beležiti?  →");
             refreshAll();
         } else {
             showError("Napaka pri ustvarjanju seje.");
@@ -517,7 +533,7 @@ public class StudySessionUI extends JFrame {
     }
 
     // ================================================================
-    //  Refresh
+    //  Refresh helpers
     // ================================================================
     private void refreshAll() {
         refreshSubjectCombos();
@@ -527,8 +543,8 @@ public class StudySessionUI extends JFrame {
     }
 
     private void refreshSubjectCombos() {
-        String prevTimer  = (String) timerSubjectCombo.getSelectedItem();
-        String prevManual = (String) manualSubjectCombo.getSelectedItem();
+        String pT = (String) timerSubjectCombo.getSelectedItem();
+        String pM = (String) manualSubjectCombo.getSelectedItem();
         timerSubjectCombo.removeAllItems();
         manualSubjectCombo.removeAllItems();
         for (Subject s : context.getSubjects())
@@ -536,40 +552,97 @@ public class StudySessionUI extends JFrame {
                 timerSubjectCombo.addItem(s.getName());
                 manualSubjectCombo.addItem(s.getName());
             }
-        if (prevTimer  != null) timerSubjectCombo.setSelectedItem(prevTimer);
-        if (prevManual != null) manualSubjectCombo.setSelectedItem(prevManual);
+        if (pT != null) timerSubjectCombo.setSelectedItem(pT);
+        if (pM != null) manualSubjectCombo.setSelectedItem(pM);
     }
 
     private void showSubjectList() {
-        subjectListModel.clear();
+        subjectTableModel.setRowCount(0);
+        int i = 1;
         for (Subject s : context.getSubjects())
             if (s.getUserId().equals(currentUserId))
-                subjectListModel.addElement(s.getName());
+                subjectTableModel.addRow(new Object[]{ i++, s.getName() });
     }
 
     // ================================================================
-    //  UI helpers
+    //  Reusable UI builders
     // ================================================================
     private JPanel pageHeader(String title) {
         JPanel h = new JPanel(new BorderLayout());
         h.setBackground(SURFACE);
         h.setBorder(new CompoundBorder(
             new MatteBorder(0, 0, 1, 0, SEP),
-            new EmptyBorder(22, 20, 18, 20)));
+            new EmptyBorder(22, PAD, 16, PAD)));
         JLabel lbl = new JLabel(title);
         lbl.setFont(new Font(FONT, Font.BOLD, 22));
-        lbl.setForeground(TEXT);
+        lbl.setForeground(DARK);
         h.add(lbl, BorderLayout.WEST);
         return h;
     }
 
+    // White card with consistent internal padding
     private JPanel card() {
         JPanel c = new JPanel();
         c.setLayout(new BoxLayout(c, BoxLayout.Y_AXIS));
         c.setBackground(SURFACE);
-        c.setBorder(new EmptyBorder(18, 18, 18, 18));
+        c.setBorder(new EmptyBorder(PAD, PAD, PAD, PAD));
         c.setAlignmentX(Component.LEFT_ALIGNMENT);
         return c;
+    }
+
+    // Table area wrapper — gives consistent PAD margin on left/right/top
+    private JPanel padded(JScrollPane scroll) {
+        JPanel w = new JPanel(new BorderLayout());
+        w.setBackground(BG);
+        w.setBorder(new EmptyBorder(PAD, PAD, 0, PAD));
+        w.add(scroll, BorderLayout.CENTER);
+        return w;
+    }
+
+    // Footer bar — PAD on all sides, gap between content and table
+    private JPanel footer() {
+        JPanel f = new JPanel(new BorderLayout(8, 0));
+        f.setBackground(BG);
+        f.setBorder(new EmptyBorder(PAD / 2, PAD, PAD, PAD));
+        return f;
+    }
+
+    private JTable styledTable(DefaultTableModel model) {
+        JTable t = new JTable(model) {
+            @Override public Component prepareRenderer(TableCellRenderer r, int row, int col) {
+                Component c = super.prepareRenderer(r, row, col);
+                if (!isRowSelected(row)) c.setBackground(row % 2 == 0 ? SURFACE : ROW_ALT);
+                else c.setBackground(ACCENT_L);
+                return c;
+            }
+        };
+        t.setRowHeight(42);
+        t.setFont(new Font(FONT, Font.PLAIN, 13));
+        t.setShowGrid(false);
+        t.setIntercellSpacing(new Dimension(0, 0));
+        t.setFillsViewportHeight(true);
+        t.setSelectionBackground(ACCENT_L);
+        t.setSelectionForeground(TEXT);
+
+        JTableHeader th = t.getTableHeader();
+        th.setFont(new Font(FONT, Font.BOLD, 11));
+        th.setBackground(ROW_ALT);
+        th.setForeground(TEXT2);
+        th.setBorder(new MatteBorder(0, 0, 1, 0, SEP));
+        th.setReorderingAllowed(false);
+        return t;
+    }
+
+    private JScrollPane tableScroll(JTable t) {
+        JScrollPane s = new JScrollPane(t);
+        s.setBorder(new LineBorder(SEP, 1, true));
+        s.getViewport().setBackground(SURFACE);
+        return s;
+    }
+
+    private void hideColumn(JTable t, int col) {
+        TableColumn c = t.getColumnModel().getColumn(col);
+        c.setMinWidth(0); c.setMaxWidth(0); c.setWidth(0);
     }
 
     private JLabel chipLabel(String text) {
@@ -585,7 +658,7 @@ public class StudySessionUI extends JFrame {
             @Override protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Color bg = !isEnabled()        ? new Color(200, 200, 200, 90)
+                Color bg = !isEnabled()           ? new Color(200, 200, 200, 80)
                          : getModel().isPressed() ? color.darker()
                          : color;
                 g2.setColor(bg);
@@ -619,7 +692,7 @@ public class StudySessionUI extends JFrame {
                 super.paintComponent(g);
                 if (getText().isEmpty()) {
                     Graphics2D g2 = (Graphics2D) g.create();
-                    g2.setColor(NAV_OFF);
+                    g2.setColor(TEXT2);
                     g2.setFont(getFont());
                     FontMetrics fm = g2.getFontMetrics();
                     g2.drawString(placeholder, getInsets().left + 2,
@@ -686,11 +759,12 @@ public class StudySessionUI extends JFrame {
             @Override protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int y = (getHeight() - 8) / 2;
                 g2.setColor(SEP);
-                g2.fillRoundRect(0, (getHeight()-8)/2, getWidth(), 8, 6, 6);
+                g2.fillRoundRect(0, y, getWidth(), 8, 6, 6);
                 g2.setColor(ACCENT);
                 int w = (int) ((double) pct / 100 * getWidth());
-                if (w > 0) g2.fillRoundRect(0, (getHeight()-8)/2, w, 8, 6, 6);
+                if (w > 0) g2.fillRoundRect(0, y, w, 8, 6, 6);
                 g2.dispose();
             }
         };
@@ -722,7 +796,7 @@ public class StudySessionUI extends JFrame {
             @Override protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(new Color(30, 30, 30, 220));
+                g2.setColor(new Color(36, 35, 37, 220));
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
                 g2.dispose();
             }
@@ -738,7 +812,7 @@ public class StudySessionUI extends JFrame {
         Rectangle bounds = getBounds();
         toast.setLocation(
             bounds.x + (bounds.width  - toast.getWidth())  / 2,
-            bounds.y + bounds.height  - toast.getHeight() - 80);
+            bounds.y +  bounds.height - toast.getHeight() - 80);
         toast.setVisible(true);
         new Timer(2000, e -> toast.dispose()) {{ setRepeats(false); start(); }};
     }
