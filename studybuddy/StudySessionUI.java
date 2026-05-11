@@ -335,15 +335,14 @@ public class StudySessionUI extends JFrame {
         body.setBackground(BG);
         body.setBorder(new EmptyBorder(PAD, PAD, PAD, PAD));
 
-        JPanel grid = new JPanel(new GridLayout(2, 2, 10, 10));
-        grid.setOpaque(false);
-        grid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 140));
-        grid.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblTotal = metricCard(grid, "Skupaj minut",   "0");
-        lblAvg   = metricCard(grid, "Povprečje/sejo", "0");
-        lblCount = metricCard(grid, "Število sej",    "0");
-        lblBest  = metricCard(grid, "Najboljši",      "—");
-        body.add(grid);
+        // Stat rows inside a single white card
+        JPanel statsCard = card();
+        statsCard.setBorder(new EmptyBorder(0, 0, 0, 0));
+        lblTotal = statRow(statsCard, "Skupaj minut",   "0",  true);
+        lblAvg   = statRow(statsCard, "Povprečje/sejo", "0",  true);
+        lblCount = statRow(statsCard, "Število sej",    "0",  true);
+        lblBest  = statRow(statsCard, "Najboljši",      "—",  false);
+        body.add(statsCard);
         body.add(Box.createVerticalStrut(PAD));
 
         JLabel chartLbl = chipLabel("PO PREDMETIH");
@@ -357,9 +356,14 @@ public class StudySessionUI extends JFrame {
         barsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         body.add(barsPanel);
 
-        JScrollPane scroll = new JScrollPane(body);
+        JPanel outer = new JPanel(new BorderLayout());
+        outer.setBackground(BG);
+        outer.add(body, BorderLayout.NORTH);
+
+        JScrollPane scroll = new JScrollPane(outer);
         scroll.setBorder(null);
         scroll.getViewport().setBackground(BG);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         p.add(scroll, BorderLayout.CENTER);
 
         JPanel foot = footer();
@@ -704,37 +708,36 @@ public class StudySessionUI extends JFrame {
         return tf;
     }
 
-    private JLabel metricCard(JPanel parent, String title, String value) {
-        JPanel card = new JPanel() {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(SURFACE);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
-                g2.setColor(SEP);
-                g2.drawRoundRect(0, 0, getWidth()-1, getHeight()-1, 14, 14);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setOpaque(false);
-        card.setBorder(new EmptyBorder(12, 8, 12, 8));
+    // Full-width stat row: title on left, value on right, optional bottom divider
+    private JLabel statRow(JPanel parent, String title, String value, boolean divider) {
+        JPanel row = new JPanel(new BorderLayout());
+        row.setBackground(SURFACE);
+        row.setBorder(new EmptyBorder(14, PAD, 14, PAD));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel titleLbl = new JLabel(title, SwingConstants.CENTER);
-        titleLbl.setFont(new Font(FONT, Font.PLAIN, 10));
-        titleLbl.setForeground(TEXT2);
-        titleLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel titleLbl = new JLabel(title);
+        titleLbl.setFont(new Font(FONT, Font.PLAIN, 13));
+        titleLbl.setForeground(TEXT);
 
-        JLabel valLbl = new JLabel(value, SwingConstants.CENTER);
-        valLbl.setFont(new Font(FONT, Font.BOLD, 24));
+        JLabel valLbl = new JLabel(value);
+        valLbl.setFont(new Font(FONT, Font.BOLD, 18));
         valLbl.setForeground(ACCENT);
-        valLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        card.add(titleLbl);
-        card.add(Box.createVerticalStrut(4));
-        card.add(valLbl);
-        parent.add(card);
+        row.add(titleLbl, BorderLayout.WEST);
+        row.add(valLbl,   BorderLayout.EAST);
+
+        if (divider) {
+            JPanel wrap = new JPanel(new BorderLayout());
+            wrap.setBackground(SURFACE);
+            wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+            wrap.add(row, BorderLayout.CENTER);
+            wrap.add(new JSeparator(), BorderLayout.SOUTH);
+            ((JSeparator) wrap.getComponent(1)).setForeground(SEP);
+            parent.add(wrap);
+        } else {
+            parent.add(row);
+        }
         return valLbl;
     }
 
